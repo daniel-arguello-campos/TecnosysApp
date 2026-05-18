@@ -11,6 +11,7 @@ const DevicesPage = lazy(() => import("@/pages/DevicesPage").then((module) => ({
 const RepairsPage = lazy(() => import("@/pages/RepairsPage").then((module) => ({ default: module.RepairsPage })));
 const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const ClientRegistrationPage = lazy(() => import("@/pages/ClientRegistrationPage").then((module) => ({ default: module.ClientRegistrationPage })));
 
 function PageLoader({ children }: { children: React.ReactNode }) {
   return (
@@ -24,6 +25,10 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <PageLoader><AuthPage /></PageLoader>,
+  },
+  {
+    path: "/invitacion/:token",
+    element: <PageLoader><ClientRegistrationPage /></PageLoader>,
   },
   {
     path: "/",

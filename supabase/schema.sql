@@ -412,3 +412,99 @@ values
   ('Revisar pendientes', 'Hay equipos que deben actualizar su diagnóstico.', 'warning', now() + interval '1 day'),
   ('Configura tu taller', 'Actualiza logo, moneda, impuestos y datos de impresión.', 'info', now())
 on conflict do nothing;
+
+-- Client Invitations System
+create type public.invitation_status as enum ('pending', 'used', 'expired', 'cancelled');
+
+create table public.client_invitations (
+  id uuid primary key default gen_random_uuid(),
+  token uuid default gen_random_uuid() not null unique,
+  status public.invitation_status not null default 'pending',
+  created_by uuid references public.profiles(id),
+  used_by_client_id uuid references public.clients(id) on delete set null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  cancelled_at timestamptz
+);
+
+alter table public.client_invitations enable row level security;
+
+create policy "Usuarios autenticados leen invitaciones" on public.client_invitations for select to authenticated using (true);
+create policy "Usuarios autenticados crean invitaciones" on public.client_invitations for insert to authenticated with check (true);
+create policy "Usuarios autenticados actualizan invitaciones" on public.client_invitations for update to authenticated using (true);
+
+-- RPC for verifying an invitation safely from anonymous context
+create or replace function public.get_invitation_by_token(p_token uuid)
+returns json
+language plpgsql
+security definer
+set search_path = ''
+as $func$
+declare
+  v_invitation record;
+begin
+  select * into v_invitation from public.client_invitations where token = p_token limit 1;
+  
+  if not found then
+    return json_build_object('error', 'Invitación no encontrada');
+  end if;
+
+  if v_invitation.status = 'cancelled' then
+    return json_build_object('error', 'Invitación cancelada', 'status', v_invitation.status);
+  end if;
+
+  if v_invitation.status = 'used' then
+    return json_build_object('error', 'Este enlace de invitación ya fue utilizado.', 'status', v_invitation.status);
+  end if;
+
+  if v_invitation.status = 'expired' or v_invitation.expires_at < now() then
+    -- auto-update to expired if not already
+    if v_invitation.status = 'pending' then
+      update public.client_invitations set status = 'expired' where id = v_invitation.id;
+    end if;
+    return json_build_object('error', 'Este enlace de invitación expiró.', 'status', 'expired');
+  end if;
+
+  return json_build_object('success', true, 'invitation', to_jsonb(v_invitation));
+end;
+$func$;
+
+-- RPC to register a client with a token
+create or replace function public.register_client_with_invitation(
+  p_token uuid,
+  p_full_name text,
+  p_document_id text,
+  p_phone text,
+  p_email text,
+  p_address text
+) returns json
+language plpgsql
+security definer
+set search_path = ''
+as $func$
+declare
+  v_invitation record;
+  v_client_id uuid;
+begin
+  select * into v_invitation from public.client_invitations where token = p_token limit 1;
+
+  if not found or v_invitation.status != 'pending' or v_invitation.expires_at < now() then
+    return json_build_object('error', 'Invitación inválida o expirada.');
+  end if;
+
+  -- Create client
+  insert into public.clients (full_name, document_id, phone, email, address, created_by)
+  values (p_full_name, p_document_id, p_phone, p_email, p_address, v_invitation.created_by)
+  returning id into v_client_id;
+
+  -- Update invitation
+  update public.client_invitations
+  set status = 'used',
+      used_by_client_id = v_client_id,
+      used_at = now()
+  where id = v_invitation.id;
+
+  return json_build_object('success', true, 'client_id', v_client_id);
+end;
+$func$;

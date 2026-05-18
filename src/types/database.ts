@@ -20,6 +20,7 @@ export type DeviceStatus =
 
 export type RepairStatus = "Pendiente" | "Diagnosticando" | "En reparación" | "Terminada" | "Entregada" | "Cancelada";
 export type PaymentStatus = "Pendiente" | "Parcial" | "Pagado" | "Anulado";
+export type InvitationStatus = "pending" | "used" | "expired" | "cancelled";
 
 export interface Profile {
   id: string;
@@ -143,6 +144,20 @@ export interface WorkshopSettings {
   print_footer: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ClientInvitation {
+  id: string;
+  token: string;
+  status: InvitationStatus;
+  created_by: string;
+  used_by_client_id: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  cancelled_at: string | null;
+  profiles?: Pick<Profile, "full_name">;
+  clients?: Pick<Client, "full_name" | "email">;
 }
 
 export interface AuditLog {

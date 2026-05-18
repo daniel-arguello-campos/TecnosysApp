@@ -273,3 +273,58 @@ export async function uploadDevicePhoto(deviceId: string, file: File) {
   if (error) throw error;
   return data;
 }
+
+export function useInvitations() {
+  return useQuery({
+    queryKey: ['invitations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('client_invitations')
+        .select('*, profiles(full_name), clients(full_name, email)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data as import('@/types/database').ClientInvitation[];
+    },
+  });
+}
+
+export function useCreateInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) throw new Error('No auth');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24); // Expires in 24 hours
+      const { data, error } = await supabase
+        .from('client_invitations')
+        .insert({
+          created_by: userData.user.id,
+          expires_at: expiresAt.toISOString(),
+        })
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data as import('@/types/database').ClientInvitation;
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['invitations'] }),
+  });
+}
+
+export function useCancelInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase
+        .from('client_invitations')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return data as import('@/types/database').ClientInvitation;
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['invitations'] }),
+  });
+}
+
